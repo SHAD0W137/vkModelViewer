@@ -1,6 +1,6 @@
 #include "Renderer.h"
 
-bool Renderer::isExtensionAvailable(const ImVector<VkExtensionProperties>& properties, const char* extension) {
+bool Renderer::isExtensionAvailable(const std::vector<VkExtensionProperties>& properties, const char* extension) {
 	return false;
 }
 
@@ -17,15 +17,12 @@ void Renderer::setupVulkan(std::vector<const char*> instance_extensions) {
 
 		// Enumerate available extensions
 		uint32_t properties_count;
-		ImVector<VkExtensionProperties> properties;
+		std::vector<VkExtensionProperties> properties;
 		vkEnumerateInstanceExtensionProperties(nullptr, &properties_count, nullptr);
 		properties.resize(properties_count);
-		err = vkEnumerateInstanceExtensionProperties(nullptr, &properties_count, properties.Data);
-		VK_CHECK(err);
+		VK_CHECK(vkEnumerateInstanceExtensionProperties(nullptr, &properties_count, properties.data()));
 
 		// Enable required extensions
-		if (isExtensionAvailable(properties, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME))
-			instance_extensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 #ifdef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
 		if (isExtensionAvailable(properties, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
 			instance_extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
@@ -38,29 +35,33 @@ void Renderer::setupVulkan(std::vector<const char*> instance_extensions) {
 		const char* layers[] = { "VK_LAYER_KHRONOS_validation" };
 		create_info.enabledLayerCount = 1;
 		create_info.ppEnabledLayerNames = layers;
-		instance_extensions.push_back("VK_EXT_debug_report");
+
+		instance_extensions.push_back("VK_EXT_debug_utils");
 #endif
 
 		// Create Vulkan Instance
 		create_info.enabledExtensionCount = (uint32_t) instance_extensions.size();
 		create_info.ppEnabledExtensionNames = instance_extensions.data();
-		err = vkCreateInstance(&create_info, g_Allocator, &g_Instance);
-		VK_CHECK(err);
+		VK_CHECK(vkCreateInstance(&create_info, g_Allocator, &g_Instance));
+
 #ifdef IMGUI_IMPL_VULKAN_USE_VOLK
 		volkLoadInstance(g_Instance);
 #endif
 
 		// Setup the debug report callback
 #ifdef APP_USE_VULKAN_DEBUG_REPORT
-		auto f_vkCreateDebugReportCallbackEXT = (PFN_vkCreateDebugReportCallbackEXT) vkGetInstanceProcAddr(g_Instance, "vkCreateDebugReportCallbackEXT");
-		assert(f_vkCreateDebugReportCallbackEXT != nullptr);
-		VkDebugReportCallbackCreateInfoEXT debug_report_ci = {};
-		debug_report_ci.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
-		debug_report_ci.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT;
-		debug_report_ci.pfnCallback = debug_report;
-		debug_report_ci.pUserData = nullptr;
-		err = f_vkCreateDebugReportCallbackEXT(g_Instance, &debug_report_ci, g_Allocator, &g_DebugReport);
-		VK_CHECK(err);
+		auto f_vkCreateDebugUtilsMessengerEXT = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(g_Instance, "vkCreateDebugUtilsMessengerEXT");
+		assert(f_vkCreateDebugUtilsMessengerEXT != nullptr);
+		VkDebugUtilsMessengerCreateInfoEXT debug_utils_ci = {};
+
+		debug_utils_ci.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
+		debug_utils_ci.messageType = 
+			VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+			VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+			VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+		debug_utils_ci.pfnUserCallback = debug_utils_callback;
+		debug_utils_ci.pUserData = nullptr;
+		VK_CHECK(f_vkCreateDebugUtilsMessengerEXT(g_Instance, &debug_utils_ci, g_Allocator, &g_DebugMessenger));
 #endif
 	}
 
@@ -79,10 +80,10 @@ void Renderer::setupVulkan(std::vector<const char*> instance_extensions) {
 
 		// Enumerate physical device extension
 		uint32_t properties_count;
-		ImVector<VkExtensionProperties> properties;
+		std::vector<VkExtensionProperties> properties;
 		vkEnumerateDeviceExtensionProperties(g_PhysicalDevice, nullptr, &properties_count, nullptr);
 		properties.resize(properties_count);
-		vkEnumerateDeviceExtensionProperties(g_PhysicalDevice, nullptr, &properties_count, properties.Data);
+		vkEnumerateDeviceExtensionProperties(g_PhysicalDevice, nullptr, &properties_count, properties.data());
 
 #ifdef VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME
 		if (IsExtensionAvailable(properties, VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME))
@@ -130,11 +131,11 @@ void Renderer::setupVulkan(std::vector<const char*> instance_extensions) {
 VkPhysicalDevice Renderer::selectPhysicalDevice(VkInstance instance) {
 	uint32_t gpu_count;
 	VK_CHECK(vkEnumeratePhysicalDevices(instance, &gpu_count, nullptr));
-	IM_ASSERT(gpu_count > 0);
+	assert(gpu_count > 0);
 
-	ImVector<VkPhysicalDevice> gpus;
-	gpus.resize(gpu_count);
-	VK_CHECK(vkEnumeratePhysicalDevices(instance, &gpu_count, gpus.Data));
+	std::vector<VkPhysicalDevice> gpus(gpu_count);
+
+	VK_CHECK(vkEnumeratePhysicalDevices(instance, &gpu_count, gpus.data()));
 
 	// If a number >1 of GPUs got reported, find discrete GPU if present, or use first one available.
 	for (VkPhysicalDevice& device : gpus) {
@@ -144,17 +145,17 @@ VkPhysicalDevice Renderer::selectPhysicalDevice(VkInstance instance) {
 			return device;
 	}
 
-	// Use first GPU (Integrated) is a Discrete one is not available.
+	// Use first GPU (Integrated) if a Discrete one is not available.
 	if (gpu_count > 0)
 		return gpus[0];
 	return VK_NULL_HANDLE;
 }
 
 uint32_t Renderer::selectQueueFamilyIndex(VkPhysicalDevice physical_device) {
+	// Selects Graphics queue.
 	uint32_t count;
 	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &count, nullptr);
-	std::vector<VkQueueFamilyProperties> queues_properties;
-	queues_properties.resize((int) count);
+	std::vector<VkQueueFamilyProperties> queues_properties((int) count);
 	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &count, queues_properties.data());
 	for (uint32_t i = 0; i < count; i++)
 		if (queues_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
@@ -257,8 +258,8 @@ void Renderer::cleanupVulkan() {
 
 #ifdef APP_USE_VULKAN_DEBUG_REPORT
 	// Remove the debug report callback
-	auto f_vkDestroyDebugReportCallbackEXT = (PFN_vkDestroyDebugReportCallbackEXT) vkGetInstanceProcAddr(g_Instance, "vkDestroyDebugReportCallbackEXT");
-	f_vkDestroyDebugReportCallbackEXT(g_Instance, g_DebugReport, g_Allocator);
+	auto f_vkDestroyDebugUtilsMessengerEXT = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(g_Instance, "vkDestroyDebugUtilsMessengerEXT");
+	f_vkDestroyDebugUtilsMessengerEXT(g_Instance, g_DebugMessenger, g_Allocator);
 #endif // APP_USE_VULKAN_DEBUG_REPORT
 
 	vkDestroyDevice(g_Device, g_Allocator);
@@ -302,7 +303,7 @@ void Renderer::frameRender(WindowData* wd, ImDrawData* draw_data) {
 	if (err != VK_SUBOPTIMAL_KHR)
 		VK_CHECK(err);
 
-	WindowFrame* fd = &wd->Frames[wd->FrameIndex];{
+	WindowFrame* fd = &wd->Frames[wd->FrameIndex]; {
 		VK_CHECK(vkWaitForFences(g_Device, 1, &fd->Fence, VK_TRUE, UINT64_MAX));    // wait indefinitely instead of periodically checking
 
 		VK_CHECK(vkResetFences(g_Device, 1, &fd->Fence));
@@ -697,7 +698,7 @@ int Renderer::run() {
 	// Create window with Vulkan graphics context
 	float main_scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
 	SDL_WindowFlags window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-	SDL_Window* window = SDL_CreateWindow("Dear ImGui SDL3+Vulkan example", (int) (1280 * main_scale), (int) (800 * main_scale), window_flags);
+	SDL_Window* window = SDL_CreateWindow("Dear ImGui SDL3+Vulkan example", (int) (1280 * main_scale), (int) (720 * main_scale), window_flags);
 	if (window == nullptr) {
 		printf("Error: SDL_CreateWindow(): %s\n", SDL_GetError());
 		return 1;

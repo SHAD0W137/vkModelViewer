@@ -1,5 +1,6 @@
+#include <core/Engine.h>
 #include "src/core/Engine.h"
-#include "src/renderer/Renderer.h"
+#include <renderer/Renderer.h>
 
 
 int main (int argc, char* argv[]) {

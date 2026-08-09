@@ -86,13 +86,17 @@ private:
 
 #ifdef _DEBUG
 #define APP_USE_VULKAN_DEBUG_REPORT
-	inline static VkDebugReportCallbackEXT g_DebugReport = VK_NULL_HANDLE;
+	inline static VkDebugUtilsMessengerEXT g_DebugMessenger = VK_NULL_HANDLE;
 #endif
 
 #ifdef APP_USE_VULKAN_DEBUG_REPORT
-	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_report(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType, uint64_t object, size_t location, int32_t messageCode, const char* pLayerPrefix, const char* pMessage, void* pUserData) {
-		(void) flags; (void) object; (void) location; (void) messageCode; (void) pUserData; (void) pLayerPrefix; // Unused arguments
-		fprintf(stderr, "[vulkan] Debug report from ObjectType: %i\nMessage: %s\n\n", objectType, pMessage);
+	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_utils_callback(
+	VkDebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
+	VkDebugUtilsMessageTypeFlagsEXT             messageType,
+	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+	void* pUserData) {
+		std::cerr << "[Vulkan Debug]: " << pCallbackData->sType << " Messaage: " << pCallbackData->pMessage << std::endl;
+
 		return VK_FALSE;
 	}
 #endif // APP_USE_VULKAN_DEBUG_REPORT
@@ -121,7 +125,7 @@ private:
 	static void createWindowSwapChain(VkPhysicalDevice physical_device, VkDevice device, WindowData* wd,
 									  const VkAllocationCallbacks* allocator, int w, int h, uint32_t min_image_count, VkImageUsageFlags image_usage);
 	static void createWindowCommandBuffers(VkPhysicalDevice physical_device, VkDevice device, WindowData* wd, uint32_t queue_family, const VkAllocationCallbacks* allocator);
-	
+
 	static void frameRender(WindowData* wd, ImDrawData* draw_data);
 	static void framePresent(WindowData* wd);
 	static void destroyFrame(VkDevice device, WindowFrame* fd, const VkAllocationCallbacks* allocator);
@@ -131,7 +135,7 @@ private:
 	static void cleanupVulkan();
 	static void cleanupVulkanWindow(WindowData* wd);
 
-	static bool isExtensionAvailable(const ImVector<VkExtensionProperties>& properties, const char* extension);
+	static bool isExtensionAvailable(const std::vector<VkExtensionProperties>& properties, const char* extension);
 
 	static int getMinImageCountFromPresentMode(VkPresentModeKHR present_mode);
 
